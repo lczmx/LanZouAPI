@@ -21,7 +21,7 @@ class LanZou:
         self._cookies = {
             "PHPSESSID": PHPSESSID,
             "phpdisk_info": phpdisk_info,
-            "ylogin": ylogin
+            "ylogin": ylogin,
         }
         self._headers = {
             "Accept": "* / *",
@@ -50,14 +50,16 @@ class LanZou:
         self._file_more_url = "https://lanzous.com/filemoreajax.php"
         self._session = requests.session()
         self._dow_session = requests.session()
-        self._disk_json = None
+        self._work_count = 0  # 记录第几次上传了
+        self._folder_id_c = "-1"  # 当前王家夹id
+        self._disk_folder_json = None
 
     def up(self, file_path: str, folder_id: str):
         """
         上传单个文件
         目前（2020年05月13日01:37:32）蓝奏云的上传规则：
             cookie中folder_id_c记录目前的id
-            通过"WU_FILE_" + 一个数 作为id，实际上就是记录这一次（WU_FILE_1）和上一次（WU_FILE_0）的文件夹id
+            通过"WU_FILE_" + 一个数 作为id，上传时用到
 
         :param file_path: 文件所在目录，建议绝对路径
         :param folder_id: 上传到文件夹的id
@@ -94,7 +96,7 @@ class LanZou:
                 "task": "1",
                 "folder_id": "-1",
                 "ve": "1",
-                "id": "WU_FILE_1",
+                "id": "WU_FILE_%s" % self._work_count,
                 "name": filename,
                 "type": "application/octet-stream",
                 # "size": str(size),
@@ -103,11 +105,10 @@ class LanZou:
             boundary='-----------------------------' + str(random.randint(1e28, 1e29 - 1))
         )
         # 修改cookie
-        new_cookie = copy.deepcopy(self._cookies)
-        new_cookie["folder_id_c"] = folder_id
+        self._change_folder_id(folder_id)
         self._headers["Content-Type"] = multipart_encoder.content_type
         up_res_json = self._session.post(url=self._up_url, data=multipart_encoder, headers=self._headers,
-                                         cookies=new_cookie).json()
+                                         cookies=self._cookies).json()
         if up_res_json.get('zt') != 1:
             ret["status"] = 0
             ret["msg"] = up_res_json.get("info")
@@ -150,7 +151,6 @@ class LanZou:
                     ret["note"].append(up_res.get("msg"))
             # 处理文件夹
             elif os.path.isdir(f_path) and iterate:
-                # TODO：完善
                 # 选择上传迭代文件的话，连同子文件夹内的文件一并上传
                 mk_res = self.mkdir(folder_id, f, "转换")
                 if mk_res.get("status"):
@@ -168,7 +168,6 @@ class LanZou:
         ret = {"status": 1, "msg": "success", "folder_data": [], "file_data": []}
         folder_ok = False
         file_ok = False
-
         folder_data = {
             "task": 47,
             "folder_id": folder_id,
@@ -193,6 +192,8 @@ class LanZou:
                 if not self._disk_info(file_json, ret, file_data, "file"):
                     file_ok = True
             if folder_ok and file_ok:
+                # 写入cookie中
+                self._cookies["folder_id_c"] = folder_id
                 return ret
 
     def _disk_info(self, f_json, ret, post_data, flag):
@@ -201,21 +202,24 @@ class LanZou:
         if f_json.get("zt") == 1 or f_json.get("zt") == 2:
             if f_json.get("text"):
                 # 正常情况
+
                 if flag == "file":
                     for data in f_json.get("text"):
                         temp = {"f_id": data.get("id"), "name": data.get("name_all"),
                                 "size": data.get("size"), "time": data.get("time")}
                         ret["file_data"].append(temp)
                 elif flag == "folder":
-                    if self._disk_json == f_json:
+                    # 蓝奏云的规则如此
+                    # 请求文件夹时，即使页数超过范围了，还是这样返回，所以只能比对两次拿到的值
+                    if self._disk_folder_json == f_json:
+                        self._disk_folder_json = None  # 清空
                         return False
+                    self._disk_folder_json = f_json
                     for data in f_json.get("text"):
                         temp = {"f_id": data.get("fol_id"), "name": data.get("name"),
                                 "folder_des": data.get("folder_des")}
                         ret["folder_data"].append(temp)
-                    # 蓝奏云的规则如此
-                    # 请求文件夹时，即使页数超过范围了，还是这样返回，所以只能比对两次拿到的值
-                    self._disk_json = f_json
+
                 post_data["pg"] += 1  # 加一页
                 return True
             else:
@@ -225,6 +229,12 @@ class LanZou:
             ret["status"] = 0
             ret["msg"] = f_json.get("info")
             return False
+
+    def _change_folder_id(self, folder_id):
+        if self._folder_id_c != folder_id:
+            # 改变当前folder_id
+            self.disk(folder_id)
+
 
     def mkdir(self, parent_id: str, folder_name: str, folder_description=""):
         """
@@ -243,10 +253,9 @@ class LanZou:
             "folder_description": folder_description
         }
         # 修改cookie
-        new_cookie = copy.deepcopy(self._cookies)
-        new_cookie["folder_id_c"] = parent_id
+        self._change_folder_id(parent_id)
         res_json = self._session.post(url=self._do_load_url, data=data, headers=self._headers,
-                                      cookies=new_cookie).json()
+                                      cookies=self._cookies).json()
         if res_json.get("zt") != 1:
             ret["status"] = 0
             ret["msg"] = res_json.get("info")
