@@ -310,16 +310,12 @@ class LanZou:
         fn_url = "https://lanzous.com" + src_list[0]
         # 3
         fn_res = self._dow_session.get(fn_url).text
-        fn_res_re = re.findall(r"var cots = '(.*)';//", fn_res)
+        fn_res_re = re.findall(r"var posturl = '(.*)';//", fn_res)
         if len(fn_res_re) != 1:
             ret["status"] = 0
             ret["msg"] = "获取sign异常"
             return ret
         sign = fn_res_re[0]
-        if sign == "st":
-            # "st"这个结果是不行的，重新获取
-            fn_res_re = re.findall(r"'sign':'(.*)','ves':1 },//", fn_res)
-            sign = fn_res_re[0]
         # 4
         data = {"action": "downprocess",
                 "sign": sign,
