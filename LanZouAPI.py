@@ -50,7 +50,7 @@ class LanZou:
         self._file_more_url = "https://lanzous.com/filemoreajax.php"
         self._session = requests.session()
         self._dow_session = requests.session()
-        self._work_count = 0  # 记录第几次上传了
+        self._work_count = 0  # 记录第几次上传了, 更新路径时会归零
         self._folder_id_c = "-1"  # 当前王家夹id
         self._disk_folder_json = None
 
@@ -63,14 +63,14 @@ class LanZou:
 
         :param file_path: 文件所在目录，建议绝对路径
         :param folder_id: 上传到文件夹的id
-        :return: {"status": 1, "msg": "success"}
+        :return: {"status": 1, "msg": "success", "f_id"}
         status:
             0 ==> 失败，蓝奏云返回造成的
             1 ==> 成功
             2 ==> 失败，用户的问题
         """
         file_path = file_path.replace("\\", "/")
-        ret = {"status": 1, "msg": "success"}
+        ret = {"status": 1, "msg": "success", "f_id": None}
         if not os.path.isfile(file_path):
             # 不是文件
             ret["status"] = 2
@@ -112,7 +112,8 @@ class LanZou:
         if up_res_json.get('zt') != 1:
             ret["status"] = 0
             ret["msg"] = up_res_json.get("info")
-
+        # 获取f_id
+        ret["f_id"] = up_res_json.get("text")[0].get("id")
         return ret
 
     def up_folder(self, folder_path: str, folder_id: str, iterate=False):
@@ -233,8 +234,8 @@ class LanZou:
     def _change_folder_id(self, folder_id):
         if self._folder_id_c != folder_id:
             # 改变当前folder_id
+            self._work_count = 0    # 归零
             self.disk(folder_id)
-
 
     def mkdir(self, parent_id: str, folder_name: str, folder_description=""):
         """
