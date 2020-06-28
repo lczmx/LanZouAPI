@@ -234,7 +234,6 @@ class LanZou:
     def _change_folder_id(self, folder_id):
         if self._folder_id_c != folder_id:
             # 改变当前folder_id
-            self._work_count = 0    # 归零
             self.disk(folder_id)
 
     def mkdir(self, parent_id: str, folder_name: str, folder_description=""):
@@ -311,7 +310,7 @@ class LanZou:
         fn_url = "https://lanzous.com" + src_list[0]
         # 3
         fn_res = self._dow_session.get(fn_url).text
-        fn_res_re = re.findall(r"var posturl = '(.*)';//", fn_res)
+        fn_res_re = re.findall(r"var ajaxup = '(.*)';//", fn_res)
         if len(fn_res_re) != 1:
             ret["status"] = 0
             ret["msg"] = "获取sign异常"
