@@ -48,6 +48,8 @@ class LanZou:
         self._dow_dom = "https://vip.d0.baidupan.com/file/"
         # 显示更多 url
         self._file_more_url = "https://lanzous.com/filemoreajax.php"
+        # api
+        self._parse_api = "http://v1.alapi.cn/api/lanzou"
         self._session = requests.session()
         self._dow_session = requests.session()
         self._work_count = 0  # 记录第几次上传了, 更新路径时会归零
@@ -284,178 +286,60 @@ class LanZou:
         ret["url"] = info.get("is_newd") + "/" + info.get("f_id")
         return ret
 
-    def download_link(self, url):
+    def download_link(self, url, pwd=""):
         """
-        获取没有密码的文件的中转下载链接，使用start_download()获取文件的字节内容
-        获取下载链接个过程：
-            1 请求文件所在url
-            2 找到HTML中的 <div class="d"> => <div class="ifr"> => <iframe class="ifr2">中的src
-            3 获取发送src中的请求，获取js的cots变量的值
-            4 使用requests模拟发送，获取下载链接请求
-            5 loads Json获取下载链接
-        :param url: 文件的url
-        :return: {"status": 1, "msg": "success", "download_link": ""}
+        获取文件或文件夹的直链，有密码的需要输入密码
+        调用的是第三方API
+        :param url: 文件或文件夹的分享链接
+        :param pwd: 文件或文件夹的密码，无时留空
+        :return: {"status": 1, "msg": "success", "download_link": "", "is_folder": False}
         """
-        # 1
-        ret = {"status": 1, "msg": "success", "download_link": ""}
-        r = self._dow_session.get(url=url, headers=self._headers)
-        # 2
-        html = etree.HTML(r.text)
-        # <div class="d"> => <div class="ifr"> => <iframe class="ifr2">中的src
-        src_list = html.xpath("""//div[@class='d2']/div[@class='ifr']/iframe[@class='ifr2']/@src""")
-        if len(src_list) != 1:
+        ret = {"status": 1, "msg": "success", "download_link": "", "pwd": "", "is_folder": False}
+        res = self._accept_api_url(url, pwd)
+        if res.get("code") != 200:
             ret["status"] = 0
-            ret["msg"] = "找不到src"
+            ret["msg"] = res.get("msg")
             return ret
-        fn_url = "https://lanzous.com" + src_list[0]
-        # 3
-        fn_res = self._dow_session.get(fn_url).text
-        fn_res_re = re.findall(r"var ajaxup = '(.*)';//", fn_res)
-        if len(fn_res_re) != 1:
-            ret["status"] = 0
-            ret["msg"] = "获取sign异常"
-            return ret
-        sign = fn_res_re[0]
-        # 4
-        data = {"action": "downprocess",
-                "sign": sign,
-                "ves": 1
-                }
-        # 重新构造一个headers, 修改referer
-        new_headers = copy.deepcopy(self._headers)
-        new_headers["Referer"] = fn_url
-        # 开始请求下载链接
-        down_link_json = self._dow_session.post(self._dow_url, data=data, headers=new_headers).json()
-        # 5
-        if down_link_json.get("zt", 0) != 1:
-            ret["status"] = 0
-            ret["msg"] = down_link_json.get("inf")
-            return ret
-        down_link = self._dow_dom + down_link_json.get("url")
-        ret["download_link"] = down_link
+        # 判断是否为文件夹
+        data = res.get("data")
+        if isinstance(data, list):
+            ret["download_link"] = []
+            ret["is_folder"] = True
+            for i in data:
+                if i.get("url") == "已超时，请刷新":
+                    i["url"] = "文件设置了密码，无法获取直链"
+                ret["download_link"].append(i)
+
+        else:
+            ret["download_link"] = data.get("url")
+
         return ret
 
-    def download_link_pwd(self, url: str, password: str):
+    def _accept_api_url(self, url, pwd):
+        if pwd:
+            url = self._parse_api + "?url=%s&pwd=%s&format=json" % (url, pwd)
+        else:
+            url = self._parse_api + "?url=%s&format=json" % url
+        res = self._dow_session.get(url).json()
+        return res
+
+    def download(self, url: str, pwd=""):
         """
-        获取带密码文件的中转下载链接，使用start_download()获取文件的字节内容
-        不带密码的文件请不要使用这个接口
-        :param url: 文件链接
-        :param password: 密码
-        :return: {"status": 1, "msg": "success", "download_link": "..."}
-        """
-        ret = {"status": 1, "msg": "success", "download_link": ""}
-        res = self._dow_session.get(url=url, headers=self._headers).text
-        res_re = re.findall(r"&sign=(.*)&p='+", res)
-        if len(res_re) != 1:
-            ret["status"] = 0
-            ret["msg"] = "没有匹配到sign"
-            return ret
-        sign = res_re[0]
-        data = {"action": "downprocess",
-                "sign": sign,
-                "p": password}
-        down_link_json = self._dow_session.post(url=self._dow_url, data=data, headers=self._headers).json()
-        if down_link_json.get("zt") != 1:
-            ret["status"] = 0
-            ret["msg"] = down_link_json.get("inf")
-            return ret
-        down_link = self._dow_dom + down_link_json.get("url")
-        ret["download_link"] = down_link
-        return ret
-
-    def download_folder_link(self, url: str, password=""):
-        """
-        获取文件夹中各个文件的中转下载链接，使用start_download()获取文件的字节内容
-
-        :param url: 文件夹链接
-        :param password: 密码，可选择，文件夹有密码时一定要输入密码
-        :return: {"status": 1, "msg": "success", "data": [...]}
-        """
-        ret = {"status": 1, "msg": "success", "data": []}
-        res = self._dow_session.get(url=url, headers=self._headers).text
-        re_rule = r"""
-			'lx':(?P<lx>.*),
-			'fid':(?P<fid>.*),
-			'uid':'(?P<uid>.*)',
-			'pg':pgs,
-			'rep':'0',
-			't':(?P<t>.*),
-			'k':(?P<k>.*),"""
-
-        res_re = re.search(re_rule, res)
-        res_re_t = re.findall(r"var %s = '(.*)'" % res_re.group("t"), res)
-        res_re_k = re.findall(r"var %s = '(.*)'" % res_re.group("k"), res)
-
-        data = {
-            "lx": res_re.group("lx"),
-            "fid": res_re.group("fid"),
-            "uid": res_re.group("uid"),
-            "pg": 1,
-            "rep": 0,
-            "t": res_re_t[0],
-            "k": res_re_k[0],
-            "up": 1,
-            "ls": 1,
-            "pwd": password
-        }
-
-        # 请求文件列表
-        get_file_ret = self._dow_get_file_list(data)
-        if not get_file_ret.get("status"):
-            ret["status"] = 0
-            ret["msg"] = get_file_ret.get("msg")
-            return ret
-        for one_page_file_json in get_file_ret.get("data"):
-            for data_dic in one_page_file_json.get("text"):
-                name = data_dic.get("name_all")
-                url_id = data_dic.get("id")
-                file_url = "https://lanzous.com/" + url_id
-                dow_ret = self.download_link(file_url)
-                if dow_ret.get("status"):
-                    temp = {"file_name": name, "down_link": dow_ret.get("download_link")}
-                    ret["data"].append(temp)
-                else:
-                    ret["status"] = 0
-                    ret["msg"] = dow_ret.get("msg")
-        return ret
-
-    def _dow_get_file_list(self, data: dict, page=1):
-        # 用于download_folder_link时 获取文件夹内全部文件
-        ret = {"status": 1, "msg": "success", "data": []}
-        while True:
-            data["pg"] = page
-            file_list_json = self._dow_session.post(url=self._file_more_url, data=data, headers=self._headers).json()
-            if file_list_json.get("zt") == 1:
-                # 正常情况
-                ret["data"].append(file_list_json)
-                page += 1
-            elif file_list_json.get("zt") == 2:
-                return ret
-            elif file_list_json.get("zt") == 4:
-                # 防止请求过快
-                time.sleep(0.5)
-            else:
-                ret["status"] = 0
-                ret["msg"] = file_list_json.get("info")
-                return ret
-            time.sleep(1)
-
-    def start_download(self, down_link: str):
-        """
-        download_link / download_link_pwd / download_folder_link的中转链接是一个一个可以跳转的页面，
-        不是真实下载连接，所以在这里获取下载的内容。
+        直接下载文件，注意不能是文件夹
+        调用的是第三方API
         注意：数据是字节类型
-        :param down_link:中间跳转页面的url,在download_link / download_link_pwd / download_folder_link方法的返回值中
+        :param url: 文件的分享链接
+        :param pwd: 文件或文件夹的密码，无时留空
         :return:{"status": 1, "msg": "success", "data": b""}
         """
         ret = {"status": 1, "msg": "success", "data": b""}
-        r = self._dow_session.get(down_link, headers=self._headers, cookies=self._cookies)
-        r.encoding = r.apparent_encoding
-        if r.status_code != 200:
-            ret["status"] = 0
-            ret["msg"] = "status code %s" % r.status_code
+        res = self.download_link(url, pwd)
+        if res.get("status") and not res.get("is_folder"):
+            r = self._dow_session.get(url=res.get("download_link"))
+            ret["data"] = r.content
             return ret
-        ret["data"] = r.content
+        ret["status"] = 0
+        ret["msg"] = res.get("msg")
         return ret
 
     def delete(self, f_type: str, f_id: str):
