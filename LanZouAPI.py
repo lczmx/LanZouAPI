@@ -332,10 +332,11 @@ class LanZou:
         :param pwd: 文件或文件夹的密码，无时留空
         :return:{"status": 1, "msg": "success", "data": b""}
         """
+
         ret = {"status": 1, "msg": "success", "data": b""}
         res = self.download_link(url, pwd)
         if res.get("status") and not res.get("is_folder"):
-            r = self._dow_session.get(url=res.get("download_link"))
+            r = self._dow_session.get(url=res.get("download_link"), headers=self._headers)
             ret["data"] = r.content
             return ret
         ret["status"] = 0
