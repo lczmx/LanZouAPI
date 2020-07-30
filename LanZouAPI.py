@@ -1,12 +1,8 @@
 from urllib import parse
 import random
-import re
-import copy
-import time
 import os
 
 from requests_toolbelt.multipart.encoder import MultipartEncoder
-from lxml import etree
 import requests
 
 
