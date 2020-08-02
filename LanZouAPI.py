@@ -266,8 +266,6 @@ class LanZou:
         :param file_id:文件的id，根据disk方法获得
         :return:{"status": 1, "msg": "success", "pwd": "", "url": ""}
         """
-        # {"zt":1,"info":{"pwd":"4q6q","onof":"0","f_id":"icxxeqd","taoc":"","is_newd":"https:\/\/wwa.lanzous.com"},"text":null}
-        # {"zt":1,"info":{"pwd":"8gwx","onof":"1","f_id":"iy0n6drueed","taoc":"","is_newd":"https:\/\/wwa.lanzous.com"},"text":null}
         ret = {"status": 1, "msg": "success", "pwd": "", "url": ""}
         data = {
             "task": "22",
